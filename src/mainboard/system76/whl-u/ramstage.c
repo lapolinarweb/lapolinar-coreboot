@@ -23,11 +23,15 @@
 #include <soc/ramstage.h>
 #include "gpio.h"
 
+#define CAMERA_HACK 0
+
 void mainboard_silicon_init_params(FSP_S_CONFIG *params) {
 	/* Configure pads prior to SiliconInit() in case there's any
 	 * dependencies during hardware initialization. */
 	cnl_configure_pads(gpio_table, ARRAY_SIZE(gpio_table));
 }
+
+#if CAMERA_HACK
 
 static u8 superio_read(u8 reg) {
 	outb(reg, 0x2E);
@@ -61,12 +65,15 @@ static void i2ec_write(u16 addr, u8 value) {
 	d2_write(0x12, value);
 }
 
+#endif
+
 static void mainboard_init(struct device *dev) {
 	printk(BIOS_INFO, "system76: keyboard init\n");
 	pc_keyboard_init(NO_AUX_DEVICE);
 
 	printk(BIOS_INFO, "system76: EC init\n");
 
+#if CAMERA_HACK
 	// Black magic - force enable camera toggle
 	u16 addr = 0x01CA;
 	u8 value = i2ec_read(addr);
@@ -76,6 +83,7 @@ static void mainboard_init(struct device *dev) {
 	} else {
 		printk(BIOS_INFO, "system76: camera toggle already enabled\n");
 	}
+#endif
 }
 
 static bool mainboard_pcie_hotplug(int port_number) {
