@@ -24,7 +24,7 @@ Device (BAT0)
     Name (BFCC, Zero)
     Method (_STA, 0, NotSerialized)  // _STA: Status
     {
-        If (^^PCI0.LPCB.EC0.ECOK)
+        If (One)
         {
             If (^^PCI0.LPCB.EC0.BAT0)
             {
@@ -110,7 +110,7 @@ Device (BAT0)
 
     Method (_BIF, 0, NotSerialized)  // _BIF: Battery Information
     {
-        If (^^PCI0.LPCB.EC0.ECOK)
+        If (One)
         {
             UPBI ()
         }
@@ -186,7 +186,7 @@ Device (BAT0)
 
     Method (_BST, 0, NotSerialized)  // _BST: Battery Status
     {
-        If (^^PCI0.LPCB.EC0.ECOK)
+        If (One)
         {
             UPBS ()
         }
