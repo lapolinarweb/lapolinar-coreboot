@@ -24,7 +24,7 @@ Device (BAT0)
     Name (BFCC, Zero)
     Method (_STA, 0, NotSerialized)  // _STA: Status
     {
-        If (^^PCI0.LPCB.EC0.ECOK)
+        If (One)
         {
             If (^^PCI0.LPCB.EC0.BAT0)
             {
@@ -43,18 +43,31 @@ Device (BAT0)
 
     Name (PBIF, Package (0x0D)
     {
+        // Power unit (0)
         One,
+        // Design capacity (1)
         0xFFFFFFFF,
+        // Last full charge capacity (2)
         0xFFFFFFFF,
+        // Battery technology (3)
         One,
+        // Design voltage (4)
         0x39D0,
+        // Design capacity of warning (5)
         Zero,
+        // Design capacity of low (6)
         Zero,
+        // Battery capacity granularity 1 (7)
         0x40,
+        // Battery capacity granularity 2 (8)
         0x40,
+        // Model (9)
         "BAT",
+        // Serial (A)
         "0001",
+        // Battery type (B)
         "LION",
+        // OEM information (C)
         "Notebook"
     })
     Method (IVBI, 0, NotSerialized)
@@ -97,7 +110,7 @@ Device (BAT0)
 
     Method (_BIF, 0, NotSerialized)  // _BIF: Battery Information
     {
-        If (^^PCI0.LPCB.EC0.ECOK)
+        If (One)
         {
             UPBI ()
         }
@@ -111,9 +124,13 @@ Device (BAT0)
 
     Name (PBST, Package (0x04)
     {
+        // State (0)
         Zero,
+        // Present rate (1)
         0xFFFFFFFF,
+        // Remaining capacity (2)
         0xFFFFFFFF,
+        // Present voltage (3)
         0x3D90
     })
     Method (IVBS, 0, NotSerialized)
@@ -169,7 +186,7 @@ Device (BAT0)
 
     Method (_BST, 0, NotSerialized)  // _BST: Battery Status
     {
-        If (^^PCI0.LPCB.EC0.ECOK)
+        If (One)
         {
             UPBS ()
         }
