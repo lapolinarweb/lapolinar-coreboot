@@ -263,3 +263,180 @@ int smmstore_clear_region(void)
 
 	return 0;
 }
+
+
+/* implementation of Version 2 */
+
+static bool store_initialized;
+static struct mem_region_device mdev_com_buf;
+
+static int smmstore_rdev_chain(struct region_device *rdev)
+{
+	if (!store_initialized)
+		return -1;
+
+	return rdev_chain_full(rdev, &mdev_com_buf.rdev);
+}
+
+int smmstore_init(void *buf, size_t len)
+{
+	if (!buf || len < SMM_BLOCK_SIZE)
+		return -1;
+
+	if (store_initialized)
+		return -1;
+
+	mem_region_device_rw_init(&mdev_com_buf, buf, len);
+
+	store_initialized = true;
+
+	return 0;
+}
+
+int smmstore_get_info(struct smmstore_params_info *out)
+{
+	struct region_device store;
+	struct region_device com_buf;
+
+	if (lookup_store(&store) < 0) {
+		printk(BIOS_ERR, "smm store: lookup of store failed\n");
+		return -1;
+	}
+
+	if (!IS_ALIGNED(region_device_offset(&store), SMM_BLOCK_SIZE)) {
+		printk(BIOS_WARNING, "smm store: store not aligned to block size\n");
+		return -1;
+	}
+
+	out->block_size = SMM_BLOCK_SIZE;
+	out->num_blocks = region_device_sz(&store) / SMM_BLOCK_SIZE;
+	if (smmstore_rdev_chain(&com_buf) < 0) {
+		/* Only works in SMM */
+		printk(BIOS_ERR, "smm store: lookup of com buffer failed\n");
+	} else {
+		out->com_buffer = (uintptr_t)rdev_mmap_full(&com_buf);
+		out->com_buffer_size = region_device_sz(&com_buf);
+	}
+
+	/* FIXME: Broken EDK2 always assumes memory mapped Firmware Block Volumes */
+	out->mmap_addr = (uintptr_t)rdev_mmap_full(&store);
+
+	printk(BIOS_DEBUG, "smm store: %d # blocks with size 0x%x and com buffer at %x\n",
+	       out->num_blocks, out->block_size, out->com_buffer);
+
+	return 0;
+}
+
+int smmstore_rawread_region(uint32_t block_id, uint32_t offset, uint32_t bufsize)
+{
+	struct region_device store;
+	struct region_device com_buf;
+	void *ptr;
+	ssize_t ret;
+
+	if (lookup_store(&store) < 0) {
+		printk(BIOS_ERR, "smm store: lookup of store failed\n");
+		return -1;
+	}
+	if (smmstore_rdev_chain(&com_buf) < 0) {
+		printk(BIOS_ERR, "smm store: lookup of com buffer failed\n");
+		return -1;
+	}
+	if ((block_id * SMM_BLOCK_SIZE) >= region_device_sz(&store)) {
+		printk(BIOS_ERR, "smm store: block ID out of range\n");
+		return -1;
+	}
+	if (offset >= region_device_sz(&com_buf)) {
+		printk(BIOS_ERR, "smm store: offset out of range\n");
+		return -1;
+	}
+
+	ptr = rdev_mmap(&com_buf, offset, bufsize);
+	if (!ptr) {
+		printk(BIOS_ERR, "smm store: not enough space for new data\n");
+		return -1;
+	}
+
+	printk(BIOS_DEBUG, "smm store: reading %p block %d, offset=0x%x, size=%x\n",
+	       ptr, block_id, offset, bufsize);
+	ret = rdev_readat(&store, ptr, block_id * SMM_BLOCK_SIZE + offset, bufsize);
+	rdev_munmap(&com_buf, ptr);
+	if (ret < 0)
+		return -1;
+
+	return 0;
+}
+
+int smmstore_rawwrite_region(uint32_t block_id, uint32_t offset, uint32_t bufsize)
+{
+	struct region_device store;
+	struct region_device com_buf;
+	void *ptr;
+	ssize_t ret;
+
+	if (lookup_store(&store) < 0) {
+		printk(BIOS_ERR, "smm store: lookup of store failed\n");
+		return -1;
+	}
+	if (smmstore_rdev_chain(&com_buf) < 0) {
+		printk(BIOS_ERR, "smm store: lookup of com buffer failed\n");
+		return -1;
+	}
+
+	printk(BIOS_DEBUG, "smm store: writing block %d, offset=0x%x, size=%x\n",
+	       block_id, offset, bufsize);
+
+	if ((block_id * SMM_BLOCK_SIZE) >= region_device_sz(&store)) {
+		printk(BIOS_ERR, "smm store: block ID out of range\n");
+		return -1;
+	}
+	if (offset >= region_device_sz(&com_buf)) {
+		printk(BIOS_ERR, "smm store: offset out of range\n");
+		return -1;
+	}
+
+	if (rdev_chain(&store, &store, block_id * SMM_BLOCK_SIZE + offset, bufsize)) {
+		printk(BIOS_ERR, "smm store: not enough space for new data\n");
+		return -1;
+	}
+	ptr = rdev_mmap(&com_buf, offset, bufsize);
+	if (!ptr) {
+		printk(BIOS_ERR, "smm store: not enough space for new data\n");
+		return -1;
+	}
+	ret = rdev_writeat(&store, ptr, 0, bufsize);
+	rdev_munmap(&com_buf, ptr);
+	if (ret < 0)
+		return -1;
+
+	return 0;
+}
+
+int smmstore_rawclear_region(uint32_t block_id)
+{
+	struct region_device store;
+
+	if (!store_initialized) {
+		// NOTE: Not really necessarry..
+		printk(BIOS_ERR, "smm store: No com buffer installed yet\n");
+		return -1;
+	}
+
+	if (lookup_store(&store) < 0) {
+		printk(BIOS_ERR, "smm store: lookup failed\n");
+		return -1;
+	}
+
+	if ((block_id * SMM_BLOCK_SIZE) >= region_device_sz(&store)) {
+		printk(BIOS_ERR, "smm store: block ID out of range\n");
+		return -1;
+	}
+
+	ssize_t res = rdev_eraseat(&store, block_id * SMM_BLOCK_SIZE, SMM_BLOCK_SIZE);
+	if (res != SMM_BLOCK_SIZE) {
+		printk(BIOS_ERR, "smm store: erasing block failed\n");
+		return -1;
+	}
+
+	return 0;
+}

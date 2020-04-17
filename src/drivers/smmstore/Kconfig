@@ -17,6 +17,15 @@ config SMMSTORE
 	default y if PAYLOAD_TIANOCORE
 	select SPI_FLASH_SMM if BOOT_DEVICE_SPI_FLASH_RW_NOMMAP
 
+config SMMSTOREV2
+	bool "Implement version 2 of SMM API"
+	depends on SMMSTORE
+	default y if PAYLOAD_TIANOCORE
+	help
+	  Version 2 of the SSMSTORE allows secure communication with the SMM
+	  and makes no asumptions of the data structure stored in the store.
+	  It splits the store into chunks to allows fault tolerant writes.
+
 config SMMSTORE_IN_CBFS
 	bool
 	default n

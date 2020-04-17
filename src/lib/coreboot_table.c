@@ -21,6 +21,8 @@
 #include <spi_flash.h>
 #include <security/vboot/misc.h>
 #include <security/vboot/vbnv_layout.h>
+#include <smmstore.h>
+
 #if CONFIG(USE_OPTION_TABLE)
 #include <option_table.h>
 #endif
@@ -384,6 +386,8 @@ static struct cmos_checksum *lb_cmos_checksum(struct lb_header *header)
 }
 #endif
 
+void __weak lb_smmstorev2(struct lb_header *header) { /* NOOP */ }
+
 static void lb_strings(struct lb_header *header)
 {
 	static const struct {
@@ -541,6 +545,9 @@ static uintptr_t write_coreboot_table(uintptr_t rom_table_end)
 		lb_spi_flash(head);
 
 	add_cbmem_pointers(head);
+
+	/* SMMSTORE v2 */
+	lb_smmstorev2(head);
 
 	/* Add board-specific table entries, if any. */
 	lb_board(head);

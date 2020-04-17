@@ -1,0 +1,188 @@
+# SMM based flash storage driver Version 2
+
+This documents the API exposed by the x86 system management based
+storage driver.
+
+## SMMSTOREv2
+
+SMMSTOREv2 is a [SMM] mediated driver to read from, write to and erase a
+predefined region in flash. It can be enabled by setting
+`CONFIG_SMMSTORE=y` and `CONFIG_SMMSTOREV2=y` in menuconfig.
+
+This can be used by the OS or the payload to implement persistent
+storage to hold for instance configuration data, without needing
+to implement a (platform specific) storage driver in the payload
+itself.
+
+The API provides read and write access to an unformated storage.
+
+## API
+
+### Storage region
+
+By default SMMSTOREv2 will operate on a separate FMAP region called
+`SMMSTORE`. The default generated FMAP will include such a region.
+On systems with a locked FMAP, e.g. in an existing vboot setup
+with a locked RO region, the option exists to add a cbfsfile
+called `smm_store` in the `RW_LEGACY` (if CHROMEOS) or in the
+`COREBOOT` FMAP regions. It is recommended for new builds using
+a handcrafted FMD that intend to make use of SMMSTORE to include a
+sufficiently large `SMMSTORE` FMAP region. It is mandatory to align
+the `SMMSTORE` region to 64KiB for the largest flash erase op
+compatibility.
+
+When a default generated FMAP is used the size of the FMAP region
+is equal to `CONFIG_SMMSTORE_SIZE`. UEFI payloads expect at least
+64KiB. To support a fault tolerant write mechanism at least a
+multiple of this is recommended.
+
+### Communication buffer
+
+The SMMSTOREv2 uses a communication buffer installed by coreboot to
+transfer data between ring0 and the [SMM] handler.
+
+In order to get the communication buffer address the payload or OS
+has to read the coreboot table with tag `0x0038`, containing:
+
+```C
+struct lb_smmstorev2 {
+	uint32_t tag;
+	uint32_t size;
+	uint32_t num_blocks;	/* Number of writeable blocks in SMM */
+	uint32_t block_size;	/* Size of a block in byte. Default: 64 KiB */
+	uint32_t mmap_addr;	/* MMIO address of the store for read only access */
+	uint32_t com_buffer;	/* Physical address of the communication buffer */
+	uint32_t com_buffer_size;	/* Size of the communication buffer in byte */
+	uint8_t apm_cmd;	/* The command byte to write to the APM I/O port */
+	uint8_t unused[3];	/* Set to zero */
+};
+```
+
+The absence of this coreboot table indicates that there's no SMMSTOREv2
+support.
+
+### Blocks
+
+The SMMSTOREv2 splits the SMMSTORE FMAP partition into smaller chunks called
+*blocks*. Every block is at least the size of 64KiB to support arbitrary NOR
+flash erase ops. A payload or OS must make no further assuptions about the
+block size or the size of the communication buffer.
+
+### generating the SMI
+
+SMMSTOREv2 is called via an SMI, which is generated via a write to the
+IO port defined in the smi_cmd entry of the FADT ACPI table. `%al`
+contains `APM_CNT_SMMSTORE=0xed` and is written to the smi_cmd IO
+port. `%ah` contains the SMMSTOREv2 command. `%ebx` contains the
+parameter buffer to the SMMSTOREv2 command.
+
+### Return values
+
+If a command succeeds, SMMSTOREv2 will return with
+`SMMSTORE_RET_SUCCESS=0` on `%eax`. On failure SMMSTORE will return
+`SMMSTORE_RET_FAILURE=1`. For unsupported SMMSTORE commands
+`SMMSTORE_REG_UNSUPPORTED=2` is returned.
+
+**NOTE1**: The caller **must** check the return value and should make
+no assumption on the returned data if `%eax` does not contain
+`SMMSTORE_RET_SUCCESS`.
+
+**NOTE2**: If the SMI returns without changing `%ax` assume that the
+SMMSTOREv2 feature is not installed.
+
+### Calling arguments
+
+SMMSTOREv2 supports 3 subcommands that are passed via `%ah`, the additional
+calling arguments are passed via `%ebx`.
+
+**NOTE**: The size of the struct entries are in the native word size of
+smihandler. This means 32 bits in almost all cases.
+
+#### - SMMSTORE_CMD_INIT = 4
+
+This installs the communication buffer to use.
+
+The additional parameter buffer `%ebx` contains a pointer to
+the following struct:
+
+```C
+struct smmstore_params_init {
+	uint32_t com_buffer;
+	uint32_t com_buffer_size;
+} __packed;
+```
+
+INPUT:
+- `com_buffer`: Physical address of the communication buffer (CBMEM)
+- `com_buffer_size`: Size in bytes of the communication buffer
+
+This clears the `SMMSTORE` storage region. The argument in `%ebx` is
+unused.
+
+#### - SMMSTORE_CMD_RAW_READ = 5
+
+The additional parameter buffer `%ebx` contains a pointer to
+the following struct:
+
+```C
+struct smmstore_params_raw_read {
+	uint32_t bufsize;
+	uint32_t bufoffset;
+	uint32_t block_id;
+} __packed;
+```
+
+INPUT:
+- `bufsize`: is the size of data to read within the communication buffer
+- `bufoffset`: is the offset within the communication buffer
+- `block_id`: the block to read from
+
+#### - SMMSTORE_CMD_RAW_WRITE = 6
+
+SMMSTOREv2 allows to write arbitrary data. It is up to the caller to
+erase a block before writing it.
+
+The additional parameter buffer `%ebx` contains a pointer to
+the following struct:
+
+```C
+struct smmstore_params_raw_write {
+        uint32_t bufsize;
+        uint32_t bufoffset;
+        uint32_t block_id;
+} __packed;
+```
+
+INPUT:
+- `bufsize`: is the size of data to write within the communication buffer
+- `bufoffset`: is the offset within the communication buffer
+- `block_id`: the block to write to
+
+#### - SMMSTORE_CMD_RAW_CLEAR = 7
+
+SMMSTOREv2 allows to clear blocks. A cleared block will read as `0xff`.
+
+```C
+struct smmstore_params_raw_clear {
+	uint32_t block_id;
+} __packed;
+```
+
+INPUT:
+- `block_id`: the block to erase
+
+#### Security
+
+Pointers provided by the payload or OS are checked to not overlap with the SMM.
+That protects the SMM handler from being manipulated.
+
+As all information are exchanged using the communication buffer and coreboot
+tables, there's no risk that a malicious application, which is able to issue
+SMIs, could extract arbitrary data or modify the currently running kernel.
+
+## External links
+
+* [A Tour Beyond BIOS Implementing UEFI Authenticated Variables in SMM with EDKI](https://software.intel.com/sites/default/files/managed/cf/ea/a_tour_beyond_bios_implementing_uefi_authenticated_variables_in_smm_with_edkii.pdf)
+Note, this differs significantly from coreboot's implementation.
+
+[SMM]: ../security/smm.md
