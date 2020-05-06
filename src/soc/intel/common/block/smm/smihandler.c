@@ -5,6 +5,7 @@
 #include <arch/io.h>
 #include <device/pci_ops.h>
 #include <console/console.h>
+#include <commonlib/region.h>
 #include <cpu/x86/cache.h>
 #include <cpu/x86/smm.h>
 #include <cpu/intel/em64t100_save_state.h>
@@ -382,6 +383,11 @@ void smihandler_southbridge_apmc(
 			/* EBX in the state save contains the GNVS pointer */
 			uint32_t reg_ebx = save_state_ops->get_reg(state, RBX);
 			gnvs = (struct global_nvs_t *)(uintptr_t)reg_ebx;
+			struct region r = {(uintptr_t)gnvs, sizeof(struct global_nvs_t)};
+			if (smm_region_overlaps_handler(&r)) {
+				printk(BIOS_ERR, "SMI#: ERROR: GNVS overlaps SMM\n");
+				break;
+			}
 			smm_initialized = 1;
 			printk(BIOS_DEBUG, "SMI#: Setting GNVS to %p\n", gnvs);
 		}
