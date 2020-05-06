@@ -2,6 +2,8 @@
 /* This file is part of the coreboot project. */
 
 #include <console/console.h>
+#include <commonlib/region.h>
+#include <cpu/x86/smm.h>
 #include <smmstore.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -11,13 +13,17 @@
  *
  * Legal means:
  *  - not pointing into SMRAM
- *  - ...?
+ *  - not pointing to ASEG
  *
  * returns 0 on success, -1 on failure
  */
 static int range_check(void *start, size_t size)
 {
-	// TODO: fill in
+	struct region r = {(uintptr_t)start, size};
+
+	if (smm_region_overlaps_handler(&r))
+		return -1;
+
 	return 0;
 }
 
@@ -26,10 +32,17 @@ uint32_t smmstore_exec(uint8_t command, void *param)
 {
 	uint32_t ret = SMMSTORE_RET_FAILURE;
 
+	/* Opt out if the parameter points to SMM */
+	if (smm_validate_pointer(param))
+		return ret;
+
 	switch (command) {
 	case SMMSTORE_CMD_READ: {
 		printk(BIOS_DEBUG, "Reading from SMM store\n");
 		struct smmstore_params_read *params = param;
+
+		if (range_check(params, sizeof(*params)) != 0)
+			break;
 
 		if (range_check(params->buf, params->bufsize) != 0)
 			break;
@@ -43,6 +56,8 @@ uint32_t smmstore_exec(uint8_t command, void *param)
 		printk(BIOS_DEBUG, "Appending into SMM store\n");
 		struct smmstore_params_append *params = param;
 
+		if (range_check(params, sizeof(*params)) != 0)
+			break;
 		if (range_check(params->key, params->keysize) != 0)
 			break;
 		if (range_check(params->val, params->valsize) != 0)
