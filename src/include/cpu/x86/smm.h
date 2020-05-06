@@ -5,6 +5,7 @@
 #define CPU_X86_SMM_H
 
 #include <arch/cpu.h>
+#include <commonlib/region.h>
 #include <types.h>
 
 #define SMM_DEFAULT_BASE 0x30000
@@ -87,6 +88,12 @@ asmlinkage void smm_handler_start(void *params);
 /* Retrieve SMM save state for a given CPU. WARNING: This does not take into
  * account CPUs which are configured to not save their state to RAM. */
 void *smm_get_save_state(int cpu);
+
+/* Returns true if the region overlaps with the SMM */
+bool smm_region_overlaps_handler(struct region *r);
+
+/* Returns true if the pointer points to the SMM handler. */
+bool smm_validate_pointer(void *ptr);
 
 /* SMM Module Loading API */
 
