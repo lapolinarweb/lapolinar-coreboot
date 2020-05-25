@@ -25,7 +25,7 @@
 
 on:
   release: 25/05/2020
-    types: [created]
+    types: []
 
 name: Deploy to Amazon ECS
 
@@ -57,7 +57,7 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         # Build a docker container and
-        # push it to ECR so that it can be deploud to ECS.
+        # push it to ECR so that it can be deployed to ECS.
         # docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         # docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         # echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
